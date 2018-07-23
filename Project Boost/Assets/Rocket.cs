@@ -8,62 +8,141 @@ public class Rocket : MonoBehaviour {
 
     [SerializeField] float rcsThrust = 250f;
     [SerializeField] float mainThrust = 500f;
+	[SerializeField] AudioClip mainEngine;
+	[SerializeField] AudioClip death;
+	[SerializeField] AudioClip levelComplete;
+	[SerializeField] ParticleSystem mainEngineParticles;
+	[SerializeField] ParticleSystem successParticles;
+	[SerializeField] ParticleSystem deathParticles;
+	[SerializeField] float levelLoadDelay = 2f;
 
-    private Rigidbody rigidbody;
-    private AudioSource audioSource;
+	bool isTransitioning = false;
+	bool debug = false;
+	Rigidbody rigidbody;
+    AudioSource audioSource;
 
 	void Start ()
     {
-        rigidbody = GetComponent<Rigidbody>();
-        audioSource = GetComponent<AudioSource>();
+        rigidbody = GetComponent<Rigidbody> ();
+        audioSource = GetComponent<AudioSource> ();
     }
 	
 	void Update ()
     {
-        Thrust();
-        Rotate();
-    }
+		if ( !isTransitioning )
+		{
+			RespondToThrustInput ();
+			RespondToRotateInput ();
+		}
 
-    private void OnCollisionEnter(Collision collision)
+		if ( Debug.isDebugBuild )
+		{
+			RespondToDebugInput ();
+		}
+	}
+
+	private void RespondToDebugInput ()
+	{
+		if ( Input.GetKeyDown ( KeyCode.L ) )
+		{
+			LoadNextLevel ();
+		}
+
+		if ( Input.GetKeyDown ( KeyCode.C ) )
+		{
+			debug = !debug;
+		}
+	}
+
+	private void OnCollisionEnter(Collision collision)
     {
-        switch(collision.gameObject.tag)
+		if ( isTransitioning || debug ) { return; }
+
+        switch ( collision.gameObject.tag )
         {
             case "Friendly":
                 break;
-            case "Finish":
-                print("Finish");
-                SceneManager.LoadScene(1);
-                break;
-            default:
-                print("DEAD");
-                SceneManager.LoadScene(0);
-                break;
+			case "Finish":
+				StartSuccessSequence ();
+				break;
+			default:
+				StartDeathSequence ();
+				break;
 
-        }
+		}
     }
 
-    private void Thrust()
+	private void StartSuccessSequence ()
+	{
+		isTransitioning = true;
+		audioSource.Stop ();
+		successParticles.Play ();
+		audioSource.PlayOneShot ( levelComplete );
+		Invoke ( "LoadNextLevel", levelLoadDelay );
+	}
+
+	private void StartDeathSequence ()
+	{
+		isTransitioning = true;
+		audioSource.Stop ();
+		deathParticles.Play ();
+		audioSource.PlayOneShot ( death );
+		Invoke ( "LoadFirstLevel", levelLoadDelay );
+	}
+
+	private void LoadNextLevel ()
+	{
+		int currentSceneIndex = SceneManager.GetActiveScene ().buildIndex;
+		int nextSceneIndex = currentSceneIndex + 1;
+		if (nextSceneIndex < SceneManager.sceneCountInBuildSettings )
+		{
+			SceneManager.LoadScene ( nextSceneIndex );
+		}
+		else
+		{
+			LoadFirstLevel ();
+		}
+	}
+
+	private void LoadFirstLevel ()
+	{
+		SceneManager.LoadScene ( 0 );
+	}
+
+	private void RespondToThrustInput()
     {
         if (Input.GetKey(KeyCode.Space))
-        {
-            rigidbody.AddRelativeForce(Vector3.up * mainThrust);
+		{
+			ApplyThrust ();
+		}
+		else
+		{
+			StopApplyingThrust ();
+		}
+	}
 
-            if (!audioSource.isPlaying)
-            {
-                audioSource.Play();
-            }
-        }
-        else
-        {
-            audioSource.Stop();
-        }
-    }
+	private void StopApplyingThrust ()
+	{
+		audioSource.Stop ();
+		mainEngineParticles.Stop ();
+	}
 
-    private void Rotate()
+	private void ApplyThrust ()
+	{
+		rigidbody.AddRelativeForce ( Vector3.up * mainThrust * Time.deltaTime );
+
+		if ( !audioSource.isPlaying )
+		{
+			audioSource.PlayOneShot ( mainEngine );
+		}
+		mainEngineParticles.Play ();
+	}
+
+	private void RespondToRotateInput()
     {
-        rigidbody.freezeRotation = true; // Take manual control of rotation
-        float rotationThisFrame = rcsThrust * Time.deltaTime;
+		rigidbody.angularVelocity = Vector3.zero; // remove rotation due to physics
 
+		float rotationThisFrame = rcsThrust * Time.deltaTime;
         if (Input.GetKey(KeyCode.A))
         {
             transform.Rotate(Vector3.forward * rotationThisFrame);
